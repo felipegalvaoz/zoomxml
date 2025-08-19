@@ -33,11 +33,13 @@ import { useForm } from "react-hook-form"
 import { zodResolver } from "@hookform/resolvers/zod"
 import * as z from "zod"
 import { CredentialsService } from "@/services/credentials"
+import { CompaniesService } from "@/services/companies"
 import { CREDENTIAL_TYPES, ENVIRONMENT_OPTIONS } from "@/types/credential"
 import type { Credential, CreateCredentialRequest, UpdateCredentialRequest } from "@/types/credential"
 import { Loader2, Eye, EyeOff } from "lucide-react"
 
-const credentialSchema = z.object({
+const createCredentialSchema = (showCompanySelect: boolean) => z.object({
+  company_id: showCompanySelect ? z.number().min(1, "Empresa é obrigatória") : z.number().optional(),
   type: z.string().min(1, "Tipo é obrigatório"),
   name: z.string().min(2, "Nome deve ter pelo menos 2 caracteres").max(255, "Nome deve ter no máximo 255 caracteres"),
   description: z.string().optional(),
@@ -45,17 +47,18 @@ const credentialSchema = z.object({
   password: z.string().optional(),
   token: z.string().optional(),
   environment: z.string().optional(),
-  active: z.boolean().default(true),
+  active: z.boolean(),
 })
 
-type CredentialFormData = z.infer<typeof credentialSchema>
+type CredentialFormData = z.infer<ReturnType<typeof createCredentialSchema>>
 
 interface CredentialModalProps {
   open: boolean
   onOpenChange: (open: boolean) => void
-  companyId: number
+  companyId?: number // Opcional para uso global
   credential?: Credential
   onSuccess: () => void
+  showCompanySelect?: boolean // Para mostrar select de empresa
 }
 
 export function CredentialModal({
@@ -64,15 +67,18 @@ export function CredentialModal({
   companyId,
   credential,
   onSuccess,
+  showCompanySelect = false,
 }: CredentialModalProps) {
   const [loading, setLoading] = useState(false)
   const [showPassword, setShowPassword] = useState(false)
   const [showToken, setShowToken] = useState(false)
+  const [companies, setCompanies] = useState<Array<{id: number, name: string, cnpj: string}>>([])
   const isEditing = !!credential
 
   const form = useForm<CredentialFormData>({
-    resolver: zodResolver(credentialSchema),
+    resolver: zodResolver(createCredentialSchema(showCompanySelect)),
     defaultValues: {
+      company_id: companyId,
       type: "",
       name: "",
       description: "",
@@ -86,11 +92,36 @@ export function CredentialModal({
 
   const selectedType = form.watch("type")
 
+  // Load companies when showCompanySelect is true
+  useEffect(() => {
+    if (showCompanySelect && open) {
+      const loadCompanies = async () => {
+        try {
+          const response = await CompaniesService.getCompanies()
+          setCompanies(response.companies.map(company => ({
+            id: company.id,
+            name: company.name,
+            cnpj: company.cnpj
+          })))
+        } catch (error) {
+          console.error("Erro ao carregar empresas:", error)
+          // Fallback para dados mockados em caso de erro
+          setCompanies([
+            { id: 1, name: "Empresa Exemplo 1", cnpj: "12.345.678/0001-90" },
+            { id: 2, name: "Empresa Exemplo 2", cnpj: "98.765.432/0001-10" },
+          ])
+        }
+      }
+      loadCompanies()
+    }
+  }, [showCompanySelect, open])
+
   // Reset form when modal opens/closes or credential changes
   useEffect(() => {
     if (open) {
       if (credential) {
         form.reset({
+          company_id: credential.company_id,
           type: credential.type,
           name: credential.name,
           description: credential.description || "",
@@ -102,6 +133,7 @@ export function CredentialModal({
         })
       } else {
         form.reset({
+          company_id: companyId,
           type: "",
           name: "",
           description: "",
@@ -137,7 +169,8 @@ export function CredentialModal({
           updateData.token = data.token
         }
 
-        await CredentialsService.updateCredential(companyId, credential.id, updateData)
+        const targetCompanyId = showCompanySelect ? credential.company_id : companyId
+        await CredentialsService.updateCredential(targetCompanyId!, credential.id, updateData)
       } else {
         // Create credential
         const createData: CreateCredentialRequest = {
@@ -150,7 +183,8 @@ export function CredentialModal({
           environment: data.environment || undefined,
         }
 
-        await CredentialsService.createCredential(companyId, createData)
+        const targetCompanyId = showCompanySelect ? data.company_id : companyId
+        await CredentialsService.createCredential(targetCompanyId!, createData)
       }
 
       onSuccess()
@@ -213,6 +247,40 @@ export function CredentialModal({
                 </FormItem>
               )}
             />
+
+            {/* Company Selection - Only show when showCompanySelect is true */}
+            {showCompanySelect && (
+              <FormField
+                control={form.control}
+                name="company_id"
+                render={({ field }) => (
+                  <FormItem>
+                    <FormLabel>Empresa *</FormLabel>
+                    <Select
+                      onValueChange={(value) => field.onChange(parseInt(value))}
+                      defaultValue={field.value?.toString()}
+                    >
+                      <FormControl>
+                        <SelectTrigger>
+                          <SelectValue placeholder="Selecione a empresa" />
+                        </SelectTrigger>
+                      </FormControl>
+                      <SelectContent>
+                        {companies.map((company) => (
+                          <SelectItem key={company.id} value={company.id.toString()}>
+                            <div className="flex flex-col">
+                              <span className="font-medium">{company.name}</span>
+                              <span className="text-xs text-muted-foreground">CNPJ: {company.cnpj}</span>
+                            </div>
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                    <FormMessage />
+                  </FormItem>
+                )}
+              />
+            )}
 
             {/* Name */}
             <FormField

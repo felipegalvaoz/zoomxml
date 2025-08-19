@@ -259,29 +259,6 @@ export function CompanyForm({ company, onSubmit, onCancel, isLoading }: CompanyF
           <div className="space-y-4">
             <h3 className="text-lg font-medium">Informações Básicas</h3>
             
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-              <div className="space-y-2">
-                <Label htmlFor="name">Razão Social *</Label>
-                <Input
-                  id="name"
-                  {...register("name", { required: "Razão social é obrigatória" })}
-                  placeholder="Ex: Empresa LTDA"
-                />
-                {errors.name && (
-                  <p className="text-sm text-destructive">{errors.name.message || "Erro na razão social"}</p>
-                )}
-              </div>
-
-              <div className="space-y-2">
-                <Label htmlFor="trade_name">Nome Fantasia</Label>
-                <Input
-                  id="trade_name"
-                  {...register("trade_name")}
-                  placeholder="Ex: Empresa"
-                />
-              </div>
-            </div>
-
             <div className="space-y-2">
               <Label htmlFor="cnpj">CNPJ *</Label>
               <div className="flex gap-2">
@@ -320,6 +297,29 @@ export function CompanyForm({ company, onSubmit, onCancel, isLoading }: CompanyF
               {errors.cnpj && (
                 <p className="text-sm text-destructive">{errors.cnpj.message || "Erro no CNPJ"}</p>
               )}
+            </div>
+
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+              <div className="space-y-2">
+                <Label htmlFor="name">Razão Social *</Label>
+                <Input
+                  id="name"
+                  {...register("name", { required: "Razão social é obrigatória" })}
+                  placeholder="Ex: Empresa LTDA"
+                />
+                {errors.name && (
+                  <p className="text-sm text-destructive">{errors.name.message || "Erro na razão social"}</p>
+                )}
+              </div>
+
+              <div className="space-y-2">
+                <Label htmlFor="trade_name">Nome Fantasia</Label>
+                <Input
+                  id="trade_name"
+                  {...register("trade_name")}
+                  placeholder="Ex: Empresa"
+                />
+              </div>
             </div>
           </div>
 

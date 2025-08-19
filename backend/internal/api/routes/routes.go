@@ -12,6 +12,7 @@ func SetupRoutes(app *fiber.App) {
 	userHandler := handlers.NewUserHandler()
 	companyHandler := handlers.NewCompanyHandler()
 	credentialHandler := handlers.NewCredentialHandler()
+	documentHandler := handlers.NewDocumentHandler()
 	cnpjHandler := handlers.NewCNPJHandler()
 
 	// Grupo API
@@ -25,6 +26,9 @@ func SetupRoutes(app *fiber.App) {
 
 	// Configurar rotas de credenciais
 	setupCredentialRoutes(api, credentialHandler)
+
+	// Configurar rotas de documentos
+	setupDocumentRoutes(api, documentHandler)
 
 	// Configurar rotas de CNPJ
 	setupCNPJRoutes(api, cnpjHandler)
@@ -135,6 +139,17 @@ func setupAuthRoutes(api fiber.Router) {
 	auth.Post("/login", authHandler.Login)                                // Login de usuários
 	auth.Post("/logout", middleware.AuthMiddleware(), authHandler.Logout) // Logout (requer autenticação)
 	auth.Get("/me", middleware.AuthMiddleware(), authHandler.GetProfile)  // Perfil do usuário logado
+}
+
+// setupDocumentRoutes configura as rotas de documentos
+func setupDocumentRoutes(api fiber.Router, handler *handlers.DocumentHandler) {
+	documents := api.Group("/documents")
+	documents.Use(middleware.AuthMiddleware()) // Requer autenticação
+
+	// CRUD de documentos
+	documents.Get("/", handler.GetDocuments)         // GET /api/documents - Listar documentos
+	documents.Get("/:id", handler.GetDocument)       // GET /api/documents/:id - Obter documento
+	documents.Delete("/:id", handler.DeleteDocument) // DELETE /api/documents/:id - Remover documento
 }
 
 // setupStatsRoutes configura as rotas de estatísticas

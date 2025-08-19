@@ -2,16 +2,14 @@
 
 import { useEffect, useState } from "react"
 import { ColumnDef } from "@tanstack/react-table"
-import { 
-  FileText, 
+import {
+  FileText,
   MoreHorizontal,
   Download,
   Eye,
   Trash2,
   Building2,
-  Calendar,
-  HardDrive,
-  Upload
+  Calendar
 } from "lucide-react"
 import { Card, CardContent } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
@@ -26,90 +24,96 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu"
 import { DataTable } from "@/components/ui/data-table"
-import { backendApiCall } from "@/lib/auth"
+import {
+  DocumentsService,
+  type GlobalDocument,
+  type DocumentFilters,
+  DOCUMENT_TYPES,
+  DOCUMENT_STATUS,
+  getDocumentTypeLabel,
+  formatCurrency,
+  formatDate
+} from "@/services/documents"
 
-interface GlobalDocument {
-  id: number
-  company_id: number
-  name: string
-  original_name: string
-  file_path: string
-  file_size: number
-  mime_type: string
-  status: "pending" | "processing" | "processed" | "error"
-  created_at: string
-  updated_at: string
-  company: {
-    id: number
-    name: string
-    cnpj: string
-    trade_name?: string
-  }
-}
-
-interface Company {
-  id: number
-  name: string
-  cnpj: string
-  trade_name?: string
+// Função para formatar CNPJ
+function formatCNPJ(cnpj: string | undefined): string {
+  if (!cnpj) return ""
+  return cnpj.replace(/^(\d{2})(\d{3})(\d{3})(\d{4})(\d{2})$/, "$1.$2.$3/$4-$5")
 }
 
 export function GlobalDocumentsContent() {
   const [documents, setDocuments] = useState<GlobalDocument[]>([])
-  const [companies, setCompanies] = useState<Company[]>([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
+  const [totalDocuments, setTotalDocuments] = useState(0)
+  const [filters] = useState<DocumentFilters>({})
 
   // Definir colunas da tabela
   const columns: ColumnDef<GlobalDocument>[] = [
     {
-      accessorKey: "original_name",
-      header: "Nome do Arquivo",
+      accessorKey: "number",
+      header: "Número",
       cell: ({ row }) => (
         <div className="flex items-center gap-2">
           <FileText className="h-4 w-4 text-muted-foreground" />
           <div>
-            <div className="font-medium">{row.getValue("original_name")}</div>
-            {row.original.name !== row.original.original_name && (
-              <div className="text-sm text-muted-foreground">
-                {row.original.name}
-              </div>
-            )}
+            <div className="font-medium">{row.getValue("number")}</div>
           </div>
         </div>
       ),
     },
     {
-      accessorKey: "company",
+      accessorKey: "type",
+      header: "Tipo",
+      cell: ({ row }) => (
+        <Badge variant="outline">
+          {getDocumentTypeLabel(row.getValue("type"))}
+        </Badge>
+      ),
+    },
+    {
+      id: "company",
       header: "Empresa",
       cell: ({ row }) => (
         <div className="flex items-center gap-2">
           <Building2 className="h-4 w-4 text-muted-foreground" />
           <div>
-            <div className="font-medium">{row.original.company.name}</div>
+            <div className="font-medium">{row.original.company?.name || "N/A"}</div>
             <div className="text-sm text-muted-foreground">
-              {formatCNPJ(row.original.company.cnpj)}
+              {row.original.company?.cnpj ? formatCNPJ(row.original.company.cnpj) : "N/A"}
             </div>
           </div>
         </div>
       ),
     },
     {
-      accessorKey: "mime_type",
-      header: "Tipo",
+      accessorKey: "taker_name",
+      header: "Tomador",
       cell: ({ row }) => (
-        <Badge variant="outline">
-          {getFileTypeFromMime(row.getValue("mime_type"))}
-        </Badge>
+        <div>
+          <div className="font-medium">{row.getValue("taker_name")}</div>
+          <div className="text-sm text-muted-foreground">
+            {formatCNPJ(row.original.taker_cnpj)}
+          </div>
+        </div>
       ),
     },
     {
-      accessorKey: "file_size",
-      header: "Tamanho",
+      accessorKey: "amount",
+      header: "Valor",
+      cell: ({ row }) => (
+        <div className="text-right font-medium">
+          {formatCurrency(row.getValue("amount"))}
+        </div>
+      ),
+    },
+    {
+      accessorKey: "issue_date",
+      header: "Data Emissão",
       cell: ({ row }) => (
         <div className="flex items-center gap-1">
-          <HardDrive className="h-3 w-3 text-muted-foreground" />
-          <span className="text-sm">{formatFileSize(row.getValue("file_size"))}</span>
+          <Calendar className="h-3 w-3 text-muted-foreground" />
+          <span className="text-sm">{formatDate(row.getValue("issue_date"))}</span>
         </div>
       ),
     },
@@ -167,11 +171,15 @@ export function GlobalDocumentsContent() {
     },
   ]
 
-  const fetchDocuments = async () => {
+  const fetchDocuments = async (newFilters: DocumentFilters = {}) => {
     try {
       setLoading(true)
-      const response = await backendApiCall<GlobalDocument[]>("/api/documents")
-      setDocuments(response || [])
+      const response = await DocumentsService.getGlobalDocuments({
+        ...filters,
+        ...newFilters
+      })
+      setDocuments(response.documents)
+      setTotalDocuments(response.pagination.total)
     } catch (err) {
       setError(err instanceof Error ? err.message : "Erro ao carregar documentos")
     } finally {
@@ -179,17 +187,7 @@ export function GlobalDocumentsContent() {
     }
   }
 
-  const fetchCompanies = async () => {
-    try {
-      const response = await backendApiCall<Company[]>("/api/companies")
-      setCompanies(response || [])
-    } catch (err) {
-      console.error("Erro ao carregar empresas:", err)
-    }
-  }
-
   useEffect(() => {
-    fetchCompanies()
     fetchDocuments()
   }, [])
 
@@ -203,45 +201,15 @@ export function GlobalDocumentsContent() {
     return variants[status] || { variant: "outline", label: status }
   }
 
-  const formatFileSize = (bytes: number) => {
-    if (bytes === 0) return "0 Bytes"
-    const k = 1024
-    const sizes = ["Bytes", "KB", "MB", "GB"]
-    const i = Math.floor(Math.log(bytes) / Math.log(k))
-    return parseFloat((bytes / Math.pow(k, i)).toFixed(2)) + " " + sizes[i]
-  }
 
-  const formatCNPJ = (cnpj: string) => {
-    return cnpj.replace(/(\d{2})(\d{3})(\d{3})(\d{4})(\d{2})/, '$1.$2.$3/$4-$5')
-  }
-
-  const getFileTypeFromMime = (mimeType: string) => {
-    if (mimeType.includes("pdf")) return "PDF"
-    if (mimeType.includes("xml")) return "XML"
-    if (mimeType.includes("excel") || mimeType.includes("spreadsheet")) return "Excel"
-    if (mimeType.includes("word") || mimeType.includes("document")) return "Word"
-    if (mimeType.includes("image")) return "Imagem"
-    return "Arquivo"
-  }
 
   const handleDownload = async (doc: GlobalDocument) => {
     try {
-      const response = await fetch(`/api/documents/${doc.id}/download`, {
-        method: "GET",
-        headers: {
-          'Authorization': `Bearer ${localStorage.getItem('token')}`
-        }
-      })
-      
-      if (!response.ok) {
-        throw new Error('Erro ao baixar documento')
-      }
-      
-      const blob = await response.blob()
+      const blob = await DocumentsService.downloadDocument(doc.id)
       const url = window.URL.createObjectURL(blob)
       const link = window.document.createElement("a")
       link.href = url
-      link.setAttribute("download", doc.original_name)
+      link.setAttribute("download", `${doc.type}_${doc.number}_${doc.provider_cnpj}.xml`)
       window.document.body.appendChild(link)
       link.click()
       link.remove()
@@ -255,9 +223,23 @@ export function GlobalDocumentsContent() {
     console.log("Adicionar novo documento")
   }
 
-  const handleDelete = (rows: any[]) => {
-    console.log("Excluir documentos:", rows)
+  const handleDelete = async (rows: any[]) => {
+    const documentIds = rows.map(row => row.original.id)
+
+    if (!confirm(`Tem certeza que deseja excluir ${documentIds.length} documento(s)?`)) {
+      return
+    }
+
+    try {
+      await DocumentsService.deleteDocuments(documentIds)
+      await fetchDocuments() // Reload documents
+    } catch (error) {
+      console.error("Erro ao excluir documentos:", error)
+      alert("Erro ao excluir documentos")
+    }
   }
+
+
 
   if (loading) {
     return (
@@ -303,29 +285,49 @@ export function GlobalDocumentsContent() {
         </div>
       </div>
 
+
+
       {/* DataTable */}
-      <DataTable
-        columns={columns}
-        data={documents}
-        searchKey="original_name"
-        searchPlaceholder="Buscar por nome do arquivo..."
-        onAdd={handleAdd}
-        onDelete={handleDelete}
-        addButtonText="Novo Documento"
-        deleteButtonText="Excluir Documentos"
-        filterableColumns={[
-          {
-            id: "status",
-            title: "Status",
-            options: [
-              { label: "Pendente", value: "pending" },
-              { label: "Processando", value: "processing" },
-              { label: "Processado", value: "processed" },
-              { label: "Erro", value: "error" },
-            ],
-          },
-        ]}
-      />
+      <div className="flex-1 min-w-0 min-h-0">
+        <DataTable
+          columns={columns}
+          data={documents}
+          searchKey="number"
+          searchPlaceholder="Buscar por número, empresa, CNPJ, tomador..."
+          onAdd={handleAdd}
+          onDelete={handleDelete}
+          addButtonText="Novo Documento"
+          deleteButtonText="Excluir Documentos"
+          filterableColumns={[
+            {
+              id: "status",
+              title: "Status",
+              options: DOCUMENT_STATUS.map(status => ({
+                label: status.label,
+                value: status.value,
+              })),
+            },
+            {
+              id: "type",
+              title: "Tipo",
+              options: DOCUMENT_TYPES.map(type => ({
+                label: type.label,
+                value: type.value,
+              })),
+            },
+          ]}
+        />
+
+        {/* Informações dos Documentos */}
+        <div className="flex items-center justify-between px-2 py-4">
+          <div className="text-sm text-muted-foreground">
+            Mostrando todos os {documents.length} documentos
+          </div>
+          <div className="text-sm text-muted-foreground">
+            Total no banco: {totalDocuments} documentos
+          </div>
+        </div>
+      </div>
     </div>
   )
 }

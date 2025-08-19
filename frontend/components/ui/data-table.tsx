@@ -111,6 +111,7 @@ export function DataTable<TData, TValue>({
   const id = useId()
   const [columnFilters, setColumnFilters] = useState<ColumnFiltersState>([])
   const [columnVisibility, setColumnVisibility] = useState<VisibilityState>({})
+  const [globalFilter, setGlobalFilter] = useState("")
   const [pagination, setPagination] = useState<PaginationState>({
     pageIndex: 0,
     pageSize: 10,
@@ -133,12 +134,14 @@ export function DataTable<TData, TValue>({
     getFilteredRowModel: getFilteredRowModel(),
     getFacetedUniqueValues: getFacetedUniqueValues(),
     onRowSelectionChange: setRowSelection,
+    onGlobalFilterChange: setGlobalFilter,
     state: {
       sorting,
       pagination,
       columnFilters,
       columnVisibility,
       rowSelection,
+      globalFilter,
     },
   })
 
@@ -156,28 +159,24 @@ export function DataTable<TData, TValue>({
       <div className="flex-shrink-0">
         <div className="flex flex-wrap items-center justify-between gap-4">
           <div className="flex items-center gap-4">
-            {/* Busca */}
+            {/* Busca Global */}
             <div className="relative">
               <Search className="absolute left-2 top-2 h-3 w-3 text-muted-foreground" />
               <Input
                 ref={inputRef}
                 className={cn(
                   "pl-7 h-8 text-xs min-w-[250px]",
-                  Boolean(table.getColumn(searchKey)?.getFilterValue()) && "pr-7"
+                  Boolean(globalFilter) && "pr-7"
                 )}
-                value={
-                  (table.getColumn(searchKey)?.getFilterValue() ?? "") as string
-                }
-                onChange={(e) =>
-                  table.getColumn(searchKey)?.setFilterValue(e.target.value)
-                }
+                value={globalFilter ?? ""}
+                onChange={(e) => setGlobalFilter(e.target.value)}
                 placeholder={searchPlaceholder}
               />
-              {Boolean(table.getColumn(searchKey)?.getFilterValue()) && (
+              {Boolean(globalFilter) && (
                 <button
                   className="absolute right-2 top-2 h-3 w-3 text-muted-foreground hover:text-foreground"
                   onClick={() => {
-                    table.getColumn(searchKey)?.setFilterValue("")
+                    setGlobalFilter("")
                     if (inputRef.current) {
                       inputRef.current.focus()
                     }

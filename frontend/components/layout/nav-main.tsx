@@ -2,6 +2,7 @@
 
 import { useState, useEffect } from "react"
 import { usePathname } from "next/navigation"
+import Link from "next/link"
 import { type LucideIcon, ChevronRight } from "lucide-react"
 
 import {
@@ -13,6 +14,7 @@ import {
   SidebarMenuSub,
   SidebarMenuSubButton,
   SidebarMenuSubItem,
+  useSidebar,
 } from "@/components/ui/sidebar"
 import {
   Collapsible,
@@ -38,7 +40,10 @@ export function NavMain({
   items: NavItem[]
 }) {
   const pathname = usePathname()
+  const { state } = useSidebar()
   const [openItems, setOpenItems] = useState<Set<string>>(new Set())
+
+  const isCollapsed = state === "collapsed"
 
   // Function to check if any subitem is active
   const isParentActive = (item: NavItem) => {
@@ -91,7 +96,10 @@ export function NavMain({
                 onOpenChange={() => toggleItem(item.title)}
               >
                 <CollapsibleTrigger asChild>
-                  <SidebarMenuButton isActive={item.isActive || isParentActive(item)}>
+                  <SidebarMenuButton
+                    isActive={item.isActive || isParentActive(item)}
+                    tooltip={item.title}
+                  >
                     {item.icon && <item.icon />}
                     <span>{item.title}</span>
                     <ChevronRight className={`ml-auto h-4 w-4 transition-transform ${
@@ -104,9 +112,9 @@ export function NavMain({
                     {item.items.map((subItem) => (
                       <SidebarMenuSubItem key={subItem.title}>
                         <SidebarMenuSubButton asChild isActive={pathname === subItem.url}>
-                          <a href={subItem.url}>
+                          <Link href={subItem.url}>
                             <span>{subItem.title}</span>
-                          </a>
+                          </Link>
                         </SidebarMenuSubButton>
                       </SidebarMenuSubItem>
                     ))}
@@ -114,11 +122,15 @@ export function NavMain({
                 </CollapsibleContent>
               </Collapsible>
             ) : (
-              <SidebarMenuButton asChild isActive={pathname === item.url}>
-                <a href={item.url}>
+              <SidebarMenuButton
+                asChild
+                isActive={pathname === item.url}
+                tooltip={item.title}
+              >
+                <Link href={item.url}>
                   {item.icon && <item.icon />}
                   <span>{item.title}</span>
-                </a>
+                </Link>
               </SidebarMenuButton>
             )}
           </SidebarMenuItem>

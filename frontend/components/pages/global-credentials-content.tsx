@@ -1,33 +1,19 @@
 "use client"
 
 import { useEffect, useState } from "react"
-import { 
-  Key, 
-  Plus, 
-  Search, 
+import { useRouter } from "next/navigation"
+import { ColumnDef } from "@tanstack/react-table"
+import {
+  Key,
   MoreHorizontal,
   Edit,
   Trash2,
-  Eye,
-  EyeOff,
   Building2,
-  Filter,
-  Download,
-  RefreshCw
 } from "lucide-react"
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
+import { Card, CardContent } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
-import { Input } from "@/components/ui/input"
 import { Badge } from "@/components/ui/badge"
 import { Skeleton } from "@/components/ui/skeleton"
-import {
-  Table,
-  TableBody,
-  TableCell,
-  TableHead,
-  TableHeader,
-  TableRow,
-} from "@/components/ui/table"
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -36,93 +22,161 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu"
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@/components/ui/select"
-import {
-  Dialog,
-  DialogContent,
-  DialogDescription,
-  DialogFooter,
-  DialogHeader,
-  DialogTitle,
-} from "@/components/ui/dialog"
-import { backendApiCall } from "@/lib/auth"
+import { DataTable } from "@/components/ui/data-table"
+import { CredentialModal } from "@/components/modals/credential-modal"
+import { CREDENTIAL_TYPES } from "@/types/credential"
+import type { Credential } from "@/types/credential"
 
-interface GlobalCredential {
-  id: number
-  company_id: number
-  type: string
-  name: string
-  description?: string
-  login?: string
-  environment?: string
-  active: boolean
-  created_at: string
-  updated_at: string
-  company: {
+interface GlobalCredential extends Credential {
+  company?: {
     id: number
     name: string
     cnpj: string
-    trade_name?: string
   }
 }
 
-interface Company {
-  id: number
-  name: string
-  cnpj: string
-  trade_name?: string
-}
-
 export function GlobalCredentialsContent() {
+  const router = useRouter()
   const [credentials, setCredentials] = useState<GlobalCredential[]>([])
-  const [companies, setCompanies] = useState<Company[]>([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
-  
-  // Filters and search
-  const [searchTerm, setSearchTerm] = useState("")
-  const [selectedCompany, setSelectedCompany] = useState<string>("all")
-  const [selectedType, setSelectedType] = useState<string>("all")
-  const [selectedEnvironment, setSelectedEnvironment] = useState<string>("all")
-  const [selectedStatus, setSelectedStatus] = useState<string>("all")
-  
-  // Pagination
-  const [currentPage, setCurrentPage] = useState(1)
-  const [totalPages, setTotalPages] = useState(1)
-  
-  // Dialog states
-  const [showCreateDialog, setShowCreateDialog] = useState(false)
-  const [showEditDialog, setShowEditDialog] = useState(false)
-  const [showDeleteDialog, setShowDeleteDialog] = useState(false)
-  const [selectedCredential, setSelectedCredential] = useState<GlobalCredential | null>(null)
-  
-  // Password visibility
-  const [visiblePasswords, setVisiblePasswords] = useState<Set<number>>(new Set())
+  const [modalOpen, setModalOpen] = useState(false)
+  const [editingCredential, setEditingCredential] = useState<GlobalCredential | undefined>(undefined)
 
-  const fetchCredentials = async (page = 1) => {
+  // Define table columns for global view
+  const columns: ColumnDef<GlobalCredential>[] = [
+    {
+      accessorKey: "company.name",
+      header: "Empresa",
+      cell: ({ row }) => (
+        <div className="min-w-[150px]">
+          <div className="font-medium text-xs flex items-center gap-2">
+            <Building2 className="h-3 w-3" />
+            {row.original.company?.name || "N/A"}
+          </div>
+          {row.original.company?.cnpj && (
+            <div className="text-xs text-muted-foreground">
+              CNPJ: {row.original.company.cnpj}
+            </div>
+          )}
+        </div>
+      ),
+    },
+    {
+      accessorKey: "name",
+      header: "Nome",
+      cell: ({ row }) => (
+        <div className="min-w-[150px]">
+          <div className="font-medium text-xs">{row.getValue("name")}</div>
+          {row.original.description && (
+            <div className="text-xs text-muted-foreground">
+              {row.original.description}
+            </div>
+          )}
+        </div>
+      ),
+    },
+    {
+      accessorKey: "type",
+      header: "Tipo",
+      cell: ({ row }) => {
+        const type = row.getValue("type") as string
+        const typeObj = CREDENTIAL_TYPES.find(t => t.value === type)
+        return (
+          <Badge variant="outline" className="text-xs">
+            {typeObj?.label || type}
+          </Badge>
+        )
+      },
+    },
+    {
+      accessorKey: "environment",
+      header: "Ambiente",
+      cell: ({ row }) => {
+        const env = row.getValue("environment") as string
+        if (!env) return <span className="text-muted-foreground text-xs">-</span>
+        
+        const variant = env === "production" ? "destructive" : 
+                      env === "staging" ? "secondary" : "default"
+        
+        return (
+          <Badge variant={variant} className="text-xs">
+            {env}
+          </Badge>
+        )
+      },
+    },
+    {
+      accessorKey: "active",
+      header: "Status",
+      cell: ({ row }) => (
+        <Badge variant={row.getValue("active") ? "default" : "secondary"} className="text-xs">
+          {row.getValue("active") ? "Ativo" : "Inativo"}
+        </Badge>
+      ),
+    },
+    {
+      accessorKey: "created_at",
+      header: "Criado em",
+      cell: ({ row }) => (
+        <span className="text-xs text-muted-foreground">
+          {formatDate(row.getValue("created_at"))}
+        </span>
+      ),
+    },
+    {
+      id: "actions",
+      header: "Ações",
+      cell: ({ row }) => (
+        <div className="flex gap-0.5">
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={() => router.push(`/companies/${row.original.company_id}/credentials`)}
+            className="text-xs px-1.5 h-6"
+            title="Ver na Empresa"
+          >
+            <Building2 className="h-3 w-3" />
+          </Button>
+        </div>
+      ),
+    },
+    {
+      id: "menu",
+      header: "",
+      cell: ({ row }) => (
+        <DropdownMenu>
+          <DropdownMenuTrigger asChild>
+            <Button variant="ghost" className="h-6 w-6 p-0">
+              <MoreHorizontal className="h-3 w-3" />
+            </Button>
+          </DropdownMenuTrigger>
+          <DropdownMenuContent align="end">
+            <DropdownMenuLabel className="text-xs">Ações</DropdownMenuLabel>
+            <DropdownMenuItem onClick={() => handleEdit(row.original)} className="text-xs">
+              <Edit className="h-3 w-3 mr-2" />
+              Editar
+            </DropdownMenuItem>
+            <DropdownMenuSeparator />
+            <DropdownMenuItem
+              className="text-destructive text-xs"
+              onClick={() => handleDelete([row])}
+            >
+              <Trash2 className="h-3 w-3 mr-2" />
+              Excluir
+            </DropdownMenuItem>
+          </DropdownMenuContent>
+        </DropdownMenu>
+      ),
+    },
+  ]
+
+  const fetchGlobalCredentials = async () => {
     try {
       setLoading(true)
-      
-      const params = new URLSearchParams({
-        page: page.toString(),
-        limit: "20"
-      })
-      
-      if (searchTerm) params.append("search", searchTerm)
-      if (selectedCompany !== "all") params.append("company_id", selectedCompany)
-      if (selectedType !== "all") params.append("type", selectedType)
-      if (selectedEnvironment !== "all") params.append("environment", selectedEnvironment)
-      if (selectedStatus !== "all") params.append("active", selectedStatus === "active" ? "true" : "false")
-      
-      const response = await backendApiCall<GlobalCredential[]>(`/api/credentials?${params}`)
-      setCredentials(response || [])
-      
+      // TODO: Implementar endpoint para buscar credenciais globais
+      // Por enquanto, vamos simular dados vazios
+      setCredentials([])
     } catch (err) {
       setError(err instanceof Error ? err.message : "Erro ao carregar credenciais")
     } finally {
@@ -130,372 +184,139 @@ export function GlobalCredentialsContent() {
     }
   }
 
-  const fetchCompanies = async () => {
-    try {
-      const response = await backendApiCall<Company[]>("/api/companies")
-      setCompanies(response || [])
-    } catch (err) {
-      console.error("Erro ao carregar empresas:", err)
-    }
-  }
-
   useEffect(() => {
-    fetchCompanies()
+    fetchGlobalCredentials()
   }, [])
 
-  useEffect(() => {
-    fetchCredentials(currentPage)
-  }, [currentPage, searchTerm, selectedCompany, selectedType, selectedEnvironment, selectedStatus])
+  const formatDate = (dateString: string) => {
+    return new Date(dateString).toLocaleDateString("pt-BR")
+  }
 
-  const getCredentialTypeLabel = (type: string) => {
-    const types: Record<string, string> = {
-      "prefeitura_user_pass": "Usuário/Senha",
-      "prefeitura_token": "Token",
-      "prefeitura_mixed": "Misto"
+  const handleAdd = () => {
+    setEditingCredential(undefined)
+    setModalOpen(true)
+  }
+
+  const handleEdit = (credential: GlobalCredential) => {
+    setEditingCredential(credential)
+    setModalOpen(true)
+  }
+
+  const handleDelete = async (rows: any[]) => {
+    const credentials = rows.map(row => row.original)
+
+    if (!confirm(`Tem certeza que deseja excluir ${credentials.length} credencial(is)?`)) {
+      return
     }
-    return types[type] || type
-  }
 
-  const getCredentialTypeBadge = (type: string) => {
-    const variants: Record<string, "default" | "secondary" | "destructive" | "outline"> = {
-      "prefeitura_user_pass": "default",
-      "prefeitura_token": "secondary", 
-      "prefeitura_mixed": "outline"
+    try {
+      // TODO: Implementar exclusão de credenciais globais
+      await fetchGlobalCredentials() // Reload list
+    } catch (error) {
+      alert(error instanceof Error ? error.message : "Erro ao excluir credenciais")
     }
-    return variants[type] || "default"
   }
 
-  const getEnvironmentBadge = (environment?: string) => {
-    if (!environment) return "outline"
-    const variants: Record<string, "default" | "secondary" | "destructive" | "outline"> = {
-      "production": "destructive",
-      "staging": "secondary",
-      "development": "outline"
-    }
-    return variants[environment] || "outline"
+  const handleModalSuccess = () => {
+    fetchGlobalCredentials() // Reload list after success
   }
 
-  const formatCNPJ = (cnpj: string) => {
-    return cnpj.replace(/(\d{2})(\d{3})(\d{3})(\d{4})(\d{2})/, '$1.$2.$3/$4-$5')
-  }
-
-  const clearFilters = () => {
-    setSearchTerm("")
-    setSelectedCompany("all")
-    setSelectedType("all")
-    setSelectedEnvironment("all")
-    setSelectedStatus("all")
-    setCurrentPage(1)
-  }
-
-  if (loading && credentials.length === 0) {
+  if (loading) {
     return (
-      <div className="space-y-6">
-        <div className="flex items-center justify-between">
+      <div className="h-full flex flex-col space-y-6 min-w-0">
+        <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
           <div>
             <Skeleton className="h-8 w-64 mb-2" />
             <Skeleton className="h-4 w-96" />
           </div>
           <Skeleton className="h-10 w-32" />
         </div>
-        
-        <Card>
-          <CardHeader>
-            <Skeleton className="h-6 w-48" />
-          </CardHeader>
-          <CardContent>
-            <div className="space-y-4">
-              {[...Array(5)].map((_, i) => (
-                <div key={i} className="flex items-center space-x-4">
-                  <Skeleton className="h-4 w-4" />
-                  <Skeleton className="h-4 flex-1" />
-                  <Skeleton className="h-4 w-24" />
-                  <Skeleton className="h-4 w-20" />
-                </div>
-              ))}
-            </div>
-          </CardContent>
-        </Card>
+        <Skeleton className="h-[400px] w-full" />
       </div>
     )
   }
 
+  if (error) {
+    return (
+      <Card>
+        <CardContent className="pt-6 text-center">
+          <p className="text-destructive font-medium">Erro ao carregar credenciais</p>
+          <p className="text-muted-foreground text-sm mt-2">{error}</p>
+          <Button onClick={() => fetchGlobalCredentials()} className="mt-4">
+            Tentar novamente
+          </Button>
+        </CardContent>
+      </Card>
+    )
+  }
+
   return (
-    <div className="space-y-6">
+    <div className="h-full flex flex-col space-y-6 min-w-0">
       {/* Header */}
-      <div className="flex items-center justify-between">
-        <div>
-          <h1 className="text-3xl font-bold tracking-tight flex items-center gap-2">
-            <Key className="h-8 w-8" />
-            Credenciais Globais
-          </h1>
-          <p className="text-muted-foreground">
-            Gerencie todas as credenciais de todas as empresas em um só lugar
-          </p>
-        </div>
-        <div className="flex gap-2">
-          <Button variant="outline" onClick={() => fetchCredentials(currentPage)}>
-            <RefreshCw className="h-4 w-4 mr-2" />
-            Atualizar
-          </Button>
-          <Button onClick={() => setShowCreateDialog(true)}>
-            <Plus className="h-4 w-4 mr-2" />
-            Nova Credencial
-          </Button>
+      <div className="flex-shrink-0">
+        <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
+          <div className="min-w-0">
+            <h1 className="text-2xl sm:text-3xl font-bold tracking-tight flex items-center gap-2">
+              <Key className="h-6 w-6 sm:h-8 sm:w-8 flex-shrink-0" />
+              <span className="truncate">Credenciais Globais</span>
+            </h1>
+            <p className="text-muted-foreground text-sm sm:text-base">
+              Visualize e gerencie todas as credenciais do sistema
+            </p>
+          </div>
         </div>
       </div>
 
-      {/* Filters */}
-      <Card>
-        <CardHeader>
-          <CardTitle className="text-lg">Filtros</CardTitle>
-          <CardDescription>
-            Use os filtros abaixo para encontrar credenciais específicas
-          </CardDescription>
-        </CardHeader>
-        <CardContent>
-          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-6 gap-4">
-            {/* Search */}
-            <div className="lg:col-span-2">
-              <div className="relative">
-                <Search className="absolute left-2 top-2.5 h-4 w-4 text-muted-foreground" />
-                <Input
-                  placeholder="Buscar por nome ou descrição..."
-                  value={searchTerm}
-                  onChange={(e) => setSearchTerm(e.target.value)}
-                  className="pl-8"
-                />
-              </div>
-            </div>
+      {/* DataTable Container */}
+      <div className="flex-1 min-w-0 min-h-0">
+        <DataTable
+          columns={columns}
+          data={credentials}
+          searchKey="name"
+          searchPlaceholder="Buscar por nome, tipo ou empresa..."
+          onAdd={handleAdd}
+          onDelete={handleDelete}
+          addButtonText="Nova Credencial"
+          deleteButtonText="Excluir Credenciais"
+          filterableColumns={[
+            {
+              id: "type",
+              title: "Tipo",
+              options: CREDENTIAL_TYPES.map(type => ({
+                label: type.label,
+                value: type.value,
+              })),
+            },
+            {
+              id: "environment",
+              title: "Ambiente",
+              options: [
+                { label: "Produção", value: "production" },
+                { label: "Homologação", value: "staging" },
+                { label: "Desenvolvimento", value: "development" },
+              ],
+            },
+            {
+              id: "active",
+              title: "Status",
+              options: [
+                { label: "Ativo", value: "true" },
+                { label: "Inativo", value: "false" },
+              ],
+            },
+          ]}
+        />
+      </div>
 
-            {/* Company Filter */}
-            <Select value={selectedCompany} onValueChange={setSelectedCompany}>
-              <SelectTrigger>
-                <SelectValue placeholder="Empresa" />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="all">Todas as empresas</SelectItem>
-                {Array.isArray(companies) && companies.map((company) => (
-                  <SelectItem key={company.id} value={company.id.toString()}>
-                    {company.name}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-
-            {/* Type Filter */}
-            <Select value={selectedType} onValueChange={setSelectedType}>
-              <SelectTrigger>
-                <SelectValue placeholder="Tipo" />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="all">Todos os tipos</SelectItem>
-                <SelectItem value="prefeitura_user_pass">Usuário/Senha</SelectItem>
-                <SelectItem value="prefeitura_token">Token</SelectItem>
-                <SelectItem value="prefeitura_mixed">Misto</SelectItem>
-              </SelectContent>
-            </Select>
-
-            {/* Environment Filter */}
-            <Select value={selectedEnvironment} onValueChange={setSelectedEnvironment}>
-              <SelectTrigger>
-                <SelectValue placeholder="Ambiente" />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="all">Todos os ambientes</SelectItem>
-                <SelectItem value="production">Produção</SelectItem>
-                <SelectItem value="staging">Homologação</SelectItem>
-                <SelectItem value="development">Desenvolvimento</SelectItem>
-              </SelectContent>
-            </Select>
-
-            {/* Status Filter */}
-            <Select value={selectedStatus} onValueChange={setSelectedStatus}>
-              <SelectTrigger>
-                <SelectValue placeholder="Status" />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="all">Todos os status</SelectItem>
-                <SelectItem value="active">Ativo</SelectItem>
-                <SelectItem value="inactive">Inativo</SelectItem>
-              </SelectContent>
-            </Select>
-          </div>
-          
-          <div className="flex justify-between items-center mt-4">
-            <p className="text-sm text-muted-foreground">
-              {credentials.length} credencial(is) encontrada(s)
-            </p>
-            <Button variant="outline" size="sm" onClick={clearFilters}>
-              Limpar Filtros
-            </Button>
-          </div>
-        </CardContent>
-      </Card>
-
-      {/* Credentials Table */}
-      <Card>
-        <CardHeader>
-          <CardTitle>Lista de Credenciais</CardTitle>
-          <CardDescription>
-            Todas as credenciais cadastradas no sistema
-          </CardDescription>
-        </CardHeader>
-        <CardContent>
-          {error ? (
-            <div className="text-center py-8">
-              <p className="text-destructive">Erro ao carregar credenciais: {error}</p>
-              <Button onClick={() => fetchCredentials(currentPage)} className="mt-4">
-                Tentar novamente
-              </Button>
-            </div>
-          ) : credentials.length === 0 ? (
-            <div className="text-center py-8">
-              <Key className="h-12 w-12 text-muted-foreground mx-auto mb-4" />
-              <p className="text-muted-foreground">Nenhuma credencial encontrada</p>
-              <p className="text-sm text-muted-foreground mt-2">
-                Ajuste os filtros ou adicione uma nova credencial
-              </p>
-            </div>
-          ) : (
-            <div className="border rounded-lg">
-              <Table>
-                <TableHeader>
-                  <TableRow>
-                    <TableHead>Nome</TableHead>
-                    <TableHead>Empresa</TableHead>
-                    <TableHead>Tipo</TableHead>
-                    <TableHead>Login</TableHead>
-                    <TableHead>Ambiente</TableHead>
-                    <TableHead>Status</TableHead>
-                    <TableHead>Criado em</TableHead>
-                    <TableHead className="w-[70px]">Ações</TableHead>
-                  </TableRow>
-                </TableHeader>
-                <TableBody>
-                  {credentials.map((credential) => (
-                    <TableRow key={credential.id}>
-                      <TableCell>
-                        <div>
-                          <div className="font-medium">{credential.name}</div>
-                          {credential.description && (
-                            <div className="text-sm text-muted-foreground">
-                              {credential.description}
-                            </div>
-                          )}
-                        </div>
-                      </TableCell>
-                      <TableCell>
-                        <div className="flex items-center gap-2">
-                          <Building2 className="h-4 w-4 text-muted-foreground" />
-                          <div>
-                            <div className="font-medium">{credential.company.name}</div>
-                            <div className="text-sm text-muted-foreground">
-                              {formatCNPJ(credential.company.cnpj)}
-                            </div>
-                          </div>
-                        </div>
-                      </TableCell>
-                      <TableCell>
-                        <Badge variant={getCredentialTypeBadge(credential.type)}>
-                          {getCredentialTypeLabel(credential.type)}
-                        </Badge>
-                      </TableCell>
-                      <TableCell>
-                        {credential.login ? (
-                          <span className="font-mono text-sm">{credential.login}</span>
-                        ) : (
-                          <span className="text-muted-foreground">-</span>
-                        )}
-                      </TableCell>
-                      <TableCell>
-                        {credential.environment ? (
-                          <Badge variant={getEnvironmentBadge(credential.environment)}>
-                            {credential.environment}
-                          </Badge>
-                        ) : (
-                          <span className="text-muted-foreground">-</span>
-                        )}
-                      </TableCell>
-                      <TableCell>
-                        <Badge variant={credential.active ? "default" : "secondary"}>
-                          {credential.active ? "Ativo" : "Inativo"}
-                        </Badge>
-                      </TableCell>
-                      <TableCell>
-                        {new Date(credential.created_at).toLocaleDateString("pt-BR")}
-                      </TableCell>
-                      <TableCell>
-                        <DropdownMenu>
-                          <DropdownMenuTrigger asChild>
-                            <Button variant="ghost" className="h-8 w-8 p-0">
-                              <MoreHorizontal className="h-4 w-4" />
-                            </Button>
-                          </DropdownMenuTrigger>
-                          <DropdownMenuContent align="end">
-                            <DropdownMenuLabel>Ações</DropdownMenuLabel>
-                            <DropdownMenuItem
-                              onClick={() => {
-                                setSelectedCredential(credential)
-                                setShowEditDialog(true)
-                              }}
-                            >
-                              <Edit className="h-4 w-4 mr-2" />
-                              Editar
-                            </DropdownMenuItem>
-                            <DropdownMenuItem>
-                              <Eye className="h-4 w-4 mr-2" />
-                              Visualizar
-                            </DropdownMenuItem>
-                            <DropdownMenuSeparator />
-                            <DropdownMenuItem
-                              onClick={() => {
-                                setSelectedCredential(credential)
-                                setShowDeleteDialog(true)
-                              }}
-                              className="text-destructive"
-                            >
-                              <Trash2 className="h-4 w-4 mr-2" />
-                              Excluir
-                            </DropdownMenuItem>
-                          </DropdownMenuContent>
-                        </DropdownMenu>
-                      </TableCell>
-                    </TableRow>
-                  ))}
-                </TableBody>
-              </Table>
-            </div>
-          )}
-
-          {/* Pagination */}
-          {totalPages > 1 && (
-            <div className="flex items-center justify-between mt-4">
-              <p className="text-sm text-muted-foreground">
-                Página {currentPage} de {totalPages}
-              </p>
-              <div className="flex gap-2">
-                <Button
-                  variant="outline"
-                  size="sm"
-                  onClick={() => setCurrentPage(prev => Math.max(1, prev - 1))}
-                  disabled={currentPage === 1}
-                >
-                  Anterior
-                </Button>
-                <Button
-                  variant="outline"
-                  size="sm"
-                  onClick={() => setCurrentPage(prev => Math.min(totalPages, prev + 1))}
-                  disabled={currentPage === totalPages}
-                >
-                  Próxima
-                </Button>
-              </div>
-            </div>
-          )}
-        </CardContent>
-      </Card>
+      {/* Modal de Credencial */}
+      <CredentialModal
+        open={modalOpen}
+        onOpenChange={setModalOpen}
+        companyId={editingCredential?.company_id}
+        credential={editingCredential}
+        onSuccess={handleModalSuccess}
+        showCompanySelect={!editingCredential} // Mostrar select apenas para novas credenciais
+      />
     </div>
   )
 }

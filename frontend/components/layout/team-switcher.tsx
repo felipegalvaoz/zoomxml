@@ -43,6 +43,14 @@ export function TeamSwitcher({
             <SidebarMenuButton
               size="lg"
               className="data-[state=open]:bg-sidebar-accent data-[state=open]:text-sidebar-accent-foreground"
+              tooltip={{
+                children: (
+                  <div>
+                    <p>{activeTeam.name}</p>
+                    <p className="text-xs text-muted-foreground">{activeTeam.plan}</p>
+                  </div>
+                )
+              }}
             >
               <div className="bg-sidebar-primary text-sidebar-primary-foreground flex aspect-square size-8 items-center justify-center rounded-lg">
                 <activeTeam.logo className="size-4" />
