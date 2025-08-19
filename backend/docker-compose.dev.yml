@@ -61,7 +61,7 @@ services:
       ENGINE_con1: postgres@dbgate-plugin-postgres
       DATABASE_con1: nfse_metadata
     ports:
-      - "3000:3000"
+      - "3002:3000"
     networks:
       - zoomxml-dev
     volumes:

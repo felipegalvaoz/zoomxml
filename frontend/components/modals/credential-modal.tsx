@@ -170,7 +170,18 @@ export function CredentialModal({
         }
 
         const targetCompanyId = showCompanySelect ? credential.company_id : companyId
-        await CredentialsService.updateCredential(targetCompanyId!, credential.id, updateData)
+
+        if (!targetCompanyId) {
+          throw new Error("Company ID is required")
+        }
+
+        if (!credential.id) {
+          throw new Error("Credential ID is required")
+        }
+
+
+
+        await CredentialsService.updateCredential(targetCompanyId, credential.id, updateData)
       } else {
         // Create credential
         const createData: CreateCredentialRequest = {
@@ -184,7 +195,12 @@ export function CredentialModal({
         }
 
         const targetCompanyId = showCompanySelect ? data.company_id : companyId
-        await CredentialsService.createCredential(targetCompanyId!, createData)
+
+        if (!targetCompanyId) {
+          throw new Error("Company ID is required")
+        }
+
+        await CredentialsService.createCredential(targetCompanyId, createData)
       }
 
       onSuccess()

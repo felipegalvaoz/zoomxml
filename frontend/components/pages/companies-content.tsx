@@ -215,8 +215,7 @@ export function CompaniesContent() {
   }
 
   const handleAdd = () => {
-    setEditingCompany(undefined)
-    setModalOpen(true)
+    router.push("/companies/new")
   }
 
   const handleEdit = (company: Company) => {

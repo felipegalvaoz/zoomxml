@@ -157,6 +157,7 @@ export function CredentialsContent({ companyId }: CredentialsContentProps = {}) 
     try {
       setLoading(true)
       const response = await CredentialsService.getCredentials(parseInt(companyId))
+
       setCredentials(response || [])
 
       // Fetch company info (you might want to add this to the service)

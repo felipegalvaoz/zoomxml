@@ -25,7 +25,7 @@ export function CompanyModal({ open, onOpenChange, company, onSuccess }: Company
   const handleSubmit = async (data: CreateCompanyRequest | UpdateCompanyRequest) => {
     try {
       setIsLoading(true)
-      
+
       if (company) {
         // Atualizar empresa existente
         await CompaniesService.updateCompany(company.id, data as UpdateCompanyRequest)
@@ -33,11 +33,26 @@ export function CompanyModal({ open, onOpenChange, company, onSuccess }: Company
         // Criar nova empresa
         await CompaniesService.createCompany(data as CreateCompanyRequest)
       }
-      
+
       onSuccess()
       onOpenChange(false)
     } catch (error) {
-      alert(error instanceof Error ? error.message : "Erro ao salvar empresa")
+      let errorMessage = "Erro ao salvar empresa"
+
+      if (error instanceof Error) {
+        // Verificar se é erro de validação
+        if (error.message.includes("Validation failed")) {
+          errorMessage = "Por favor, verifique os dados informados. Alguns campos obrigatórios podem estar faltando ou inválidos."
+        } else if (error.message.includes("email must be a valid email")) {
+          errorMessage = "Por favor, informe um email válido ou deixe o campo vazio."
+        } else if (error.message.includes("CNPJ already exists")) {
+          errorMessage = "Este CNPJ já está cadastrado no sistema."
+        } else {
+          errorMessage = error.message
+        }
+      }
+
+      alert(errorMessage)
     } finally {
       setIsLoading(false)
     }

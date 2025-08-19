@@ -34,6 +34,8 @@ import {
   formatCurrency,
   formatDate
 } from "@/services/documents"
+import { CompaniesService } from "@/services/companies"
+import type { Company } from "@/types/company"
 
 // Função para formatar CNPJ
 function formatCNPJ(cnpj: string | undefined): string {
@@ -43,6 +45,7 @@ function formatCNPJ(cnpj: string | undefined): string {
 
 export function GlobalDocumentsContent() {
   const [documents, setDocuments] = useState<GlobalDocument[]>([])
+  const [companies, setCompanies] = useState<Company[]>([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
   const [totalDocuments, setTotalDocuments] = useState(0)
@@ -74,6 +77,7 @@ export function GlobalDocumentsContent() {
     {
       id: "company",
       header: "Empresa",
+      accessorFn: (row) => row.company?.id?.toString() || "",
       cell: ({ row }) => (
         <div className="flex items-center gap-2">
           <Building2 className="h-4 w-4 text-muted-foreground" />
@@ -85,6 +89,11 @@ export function GlobalDocumentsContent() {
           </div>
         </div>
       ),
+      filterFn: (row, _id, value) => {
+        if (!value || value.length === 0) return true
+        const companyId = row.original.company?.id?.toString()
+        return value.includes(companyId)
+      },
     },
     {
       accessorKey: "taker_name",
@@ -178,8 +187,8 @@ export function GlobalDocumentsContent() {
         ...filters,
         ...newFilters
       })
-      setDocuments(response.documents)
-      setTotalDocuments(response.pagination.total)
+      setDocuments(response.documents || [])
+      setTotalDocuments(response.pagination?.total || 0)
     } catch (err) {
       setError(err instanceof Error ? err.message : "Erro ao carregar documentos")
     } finally {
@@ -187,8 +196,18 @@ export function GlobalDocumentsContent() {
     }
   }
 
+  const fetchCompanies = async () => {
+    try {
+      const response = await CompaniesService.getCompanies({ limit: 1000 })
+      setCompanies(response.companies || [])
+    } catch (err) {
+      console.error("Erro ao carregar empresas:", err)
+    }
+  }
+
   useEffect(() => {
     fetchDocuments()
+    fetchCompanies()
   }, [])
 
   const getStatusBadge = (status: string) => {
@@ -291,7 +310,7 @@ export function GlobalDocumentsContent() {
       <div className="flex-1 min-w-0 min-h-0">
         <DataTable
           columns={columns}
-          data={documents}
+          data={documents || []}
           searchKey="number"
           searchPlaceholder="Buscar por número, empresa, CNPJ, tomador..."
           onAdd={handleAdd}
@@ -299,6 +318,14 @@ export function GlobalDocumentsContent() {
           addButtonText="Novo Documento"
           deleteButtonText="Excluir Documentos"
           filterableColumns={[
+            {
+              id: "company",
+              title: "Empresa",
+              options: companies.map(company => ({
+                label: `${company.name} (${formatCNPJ(company.cnpj)})`,
+                value: company.id.toString(),
+              })),
+            },
             {
               id: "status",
               title: "Status",
@@ -321,7 +348,7 @@ export function GlobalDocumentsContent() {
         {/* Informações dos Documentos */}
         <div className="flex items-center justify-between px-2 py-4">
           <div className="text-sm text-muted-foreground">
-            Mostrando todos os {documents.length} documentos
+            Mostrando todos os {documents?.length || 0} documentos
           </div>
           <div className="text-sm text-muted-foreground">
             Total no banco: {totalDocuments} documentos

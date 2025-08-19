@@ -118,6 +118,7 @@ export function DataTable<TData, TValue>({
   })
   const [sorting, setSorting] = useState<SortingState>([])
   const [rowSelection, setRowSelection] = useState({})
+  const [filterSearches, setFilterSearches] = useState<Record<string, string>>({})
   const inputRef = useRef<HTMLInputElement>(null)
 
   const table = useReactTable({
@@ -191,6 +192,12 @@ export function DataTable<TData, TValue>({
           {filterableColumns.map((filterColumn) => {
             const column = table.getColumn(filterColumn.id)
             const selectedValues = (column?.getFilterValue() as string[]) ?? []
+            const filterSearch = filterSearches[filterColumn.id] || ""
+
+            // Filtrar opções baseado na busca
+            const filteredOptions = filterColumn.options.filter(option =>
+              option.label.toLowerCase().includes(filterSearch.toLowerCase())
+            )
 
             return (
               <Popover key={filterColumn.id}>
@@ -205,33 +212,77 @@ export function DataTable<TData, TValue>({
                     )}
                   </Button>
                 </PopoverTrigger>
-                <PopoverContent className="w-auto p-3" align="start">
+                <PopoverContent className="w-80 p-3" align="start">
                   <div className="space-y-3">
                     <div className="text-sm font-medium text-muted-foreground">
                       Filtrar por {filterColumn.title}
                     </div>
-                    <div className="space-y-2">
-                      {filterColumn.options.map((option) => (
-                        <div key={option.value} className="flex items-center space-x-2">
-                          <Checkbox
-                            id={`${id}-${filterColumn.id}-${option.value}`}
-                            checked={selectedValues.includes(option.value)}
-                            onCheckedChange={(checked) => {
-                              const newValues = checked
-                                ? [...selectedValues, option.value]
-                                : selectedValues.filter((v) => v !== option.value)
-                              column?.setFilterValue(newValues.length ? newValues : undefined)
-                            }}
-                          />
-                          <Label
-                            htmlFor={`${id}-${filterColumn.id}-${option.value}`}
-                            className="text-sm font-normal"
-                          >
-                            {option.label}
-                          </Label>
+
+                    {/* Campo de busca */}
+                    {filterColumn.options.length > 5 && (
+                      <div className="relative">
+                        <Search className="absolute left-2 top-2.5 h-4 w-4 text-muted-foreground" />
+                        <Input
+                          placeholder={`Buscar ${filterColumn.title.toLowerCase()}...`}
+                          value={filterSearch}
+                          onChange={(e) => setFilterSearches(prev => ({
+                            ...prev,
+                            [filterColumn.id]: e.target.value
+                          }))}
+                          className="pl-8 h-9"
+                        />
+                      </div>
+                    )}
+
+                    {/* Lista de opções */}
+                    <div className="space-y-2 max-h-60 overflow-y-auto">
+                      {filteredOptions.length > 0 ? (
+                        filteredOptions.map((option) => (
+                          <div key={option.value} className="flex items-center space-x-2">
+                            <Checkbox
+                              id={`${id}-${filterColumn.id}-${option.value}`}
+                              checked={selectedValues.includes(option.value)}
+                              onCheckedChange={(checked) => {
+                                const newValues = checked
+                                  ? [...selectedValues, option.value]
+                                  : selectedValues.filter((v) => v !== option.value)
+                                column?.setFilterValue(newValues.length ? newValues : undefined)
+                              }}
+                            />
+                            <Label
+                              htmlFor={`${id}-${filterColumn.id}-${option.value}`}
+                              className="text-sm font-normal cursor-pointer flex-1"
+                            >
+                              {option.label}
+                            </Label>
+                          </div>
+                        ))
+                      ) : (
+                        <div className="text-sm text-muted-foreground text-center py-2">
+                          Nenhum resultado encontrado
                         </div>
-                      ))}
+                      )}
                     </div>
+
+                    {/* Ações */}
+                    {selectedValues.length > 0 && (
+                      <div className="pt-2 border-t">
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          onClick={() => {
+                            column?.setFilterValue(undefined)
+                            setFilterSearches(prev => ({
+                              ...prev,
+                              [filterColumn.id]: ""
+                            }))
+                          }}
+                          className="w-full"
+                        >
+                          Limpar seleção
+                        </Button>
+                      </div>
+                    )}
                   </div>
                 </PopoverContent>
               </Popover>

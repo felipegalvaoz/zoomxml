@@ -41,7 +41,22 @@ export class CredentialsService {
 
   // Update credential
   static async updateCredential(companyId: number, credentialId: number, data: UpdateCredentialRequest): Promise<Credential> {
-    return await backendApiCall<Credential>(`/api/companies/${companyId}/credentials/${credentialId}`, {
+    // Validate IDs are valid numbers
+    const validCompanyId = Number(companyId)
+    const validCredentialId = Number(credentialId)
+
+    if (!Number.isInteger(validCompanyId) || validCompanyId <= 0) {
+      throw new Error(`Invalid company ID: ${companyId}`)
+    }
+
+    if (!Number.isInteger(validCredentialId) || validCredentialId <= 0) {
+      throw new Error(`Invalid credential ID: ${credentialId}`)
+    }
+
+    const url = `/api/companies/${validCompanyId}/credentials/${validCredentialId}`
+
+
+    return await backendApiCall<Credential>(url, {
       method: 'PATCH',
       body: JSON.stringify(data),
       headers: {

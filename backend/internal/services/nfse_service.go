@@ -9,8 +9,10 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"strings"
 	"time"
 
+	"github.com/zoomxml/internal/database"
 	"github.com/zoomxml/internal/logger"
 	"github.com/zoomxml/internal/models"
 )
@@ -275,9 +277,29 @@ func (s *NFSeService) StoreNFSeDocuments(ctx context.Context, companyID int64, d
 		return nil
 	}
 
-	// Convert NFSeDocument to XMLDocument for batch processing
-	xmlDocuments := make([]XMLDocument, len(documents))
-	for i, doc := range documents {
+	// Step 1: Pre-filter documents that we already have processed
+	filteredDocuments, skippedCount := s.preFilterProcessedDocuments(ctx, companyID, documents)
+
+	if skippedCount > 0 {
+		logger.InfoWithFields("Skipped already processed documents", map[string]any{
+			"operation":       "store_nfse_intelligent",
+			"company_id":      companyID,
+			"skipped_count":   skippedCount,
+			"remaining_count": len(filteredDocuments),
+		})
+	}
+
+	if len(filteredDocuments) == 0 {
+		logger.InfoWithFields("All documents already processed, skipping batch", map[string]any{
+			"operation":  "store_nfse_intelligent",
+			"company_id": companyID,
+		})
+		return nil
+	}
+
+	// Convert filtered NFSeDocument to XMLDocument for batch processing
+	xmlDocuments := make([]XMLDocument, len(filteredDocuments))
+	for i, doc := range filteredDocuments {
 		xmlDocuments[i] = XMLDocument{
 			FileName: doc.FileName,
 			Content:  doc.XMLContent,
@@ -333,4 +355,79 @@ func (s *NFSeService) StoreNFSeDocuments(ctx context.Context, companyID int64, d
 	}
 
 	return nil
+}
+
+// preFilterProcessedDocuments filters out documents that have already been processed
+func (s *NFSeService) preFilterProcessedDocuments(ctx context.Context, companyID int64, documents []NFSeDocument) ([]NFSeDocument, int) {
+	if len(documents) == 0 {
+		return documents, 0
+	}
+
+	// Extract file names for batch lookup
+	fileNames := make([]string, len(documents))
+	for i, doc := range documents {
+		fileNames[i] = doc.FileName
+	}
+
+	// Check which files have already been processed by looking at existing documents
+	// We'll use the storage_key pattern to identify processed files
+	existingFiles := make(map[string]bool)
+
+	// Query existing documents with storage keys that match our file names
+	var existingDocs []models.Document
+	err := database.DB.NewSelect().
+		Model(&existingDocs).
+		Column("storage_key").
+		Where("company_id = ?", companyID).
+		Where("storage_key IS NOT NULL AND storage_key != ''").
+		Scan(ctx)
+
+	if err != nil {
+		logger.WarnWithFields("Failed to check existing documents, processing all", map[string]any{
+			"operation":  "pre_filter_documents",
+			"company_id": companyID,
+			"error":      err.Error(),
+		})
+		return documents, 0
+	}
+
+	// Build map of existing file names from storage keys
+	for _, doc := range existingDocs {
+		if doc.StorageKey != "" {
+			// Extract filename from storage key (format: nfse/year/competence/cnpj/filename)
+			parts := strings.Split(doc.StorageKey, "/")
+			if len(parts) > 0 {
+				fileName := parts[len(parts)-1]
+				existingFiles[fileName] = true
+			}
+		}
+	}
+
+	// Filter out documents that already exist
+	var filteredDocuments []NFSeDocument
+	skippedCount := 0
+
+	for _, doc := range documents {
+		if existingFiles[doc.FileName] {
+			skippedCount++
+			logger.DebugWithFields("Skipping already processed file", map[string]any{
+				"operation":  "pre_filter_documents",
+				"company_id": companyID,
+				"file_name":  doc.FileName,
+			})
+			continue
+		}
+		filteredDocuments = append(filteredDocuments, doc)
+	}
+
+	logger.InfoWithFields("Pre-filtering completed", map[string]any{
+		"operation":       "pre_filter_documents",
+		"company_id":      companyID,
+		"total_documents": len(documents),
+		"existing_files":  len(existingFiles),
+		"skipped_count":   skippedCount,
+		"remaining_count": len(filteredDocuments),
+	})
+
+	return filteredDocuments, skippedCount
 }

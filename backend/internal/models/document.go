@@ -51,6 +51,23 @@ type Document struct {
 	Company *Company `bun:"rel:belongs-to,join:company_id=id" json:"company,omitempty"`
 }
 
+// ProcessedFile tracks files that have been processed to avoid reprocessing
+type ProcessedFile struct {
+	ID          int64     `bun:",pk,autoincrement" json:"id"`
+	CompanyID   int64     `bun:",notnull" json:"company_id"`
+	FileName    string    `bun:",notnull" json:"file_name"`
+	FileHash    string    `bun:",notnull" json:"file_hash"`
+	ProcessedAt time.Time `bun:",nullzero,notnull,default:current_timestamp" json:"processed_at"`
+	Status      string    `bun:",notnull,default:'processed'" json:"status"` // processed, duplicate, error
+	DocumentID  *int64    `bun:"" json:"document_id,omitempty"`              // Reference to created document if any
+	CreatedAt   time.Time `bun:"created_at,nullzero,notnull,default:current_timestamp" json:"created_at"`
+	UpdatedAt   time.Time `bun:"updated_at,nullzero,notnull,default:current_timestamp" json:"updated_at"`
+
+	// Relacionamentos
+	Company  *Company  `bun:"rel:belongs-to,join:company_id=id" json:"company,omitempty"`
+	Document *Document `bun:"rel:belongs-to,join:document_id=id" json:"document,omitempty"`
+}
+
 // IsProcessed verifica se o documento foi processado
 func (d *Document) IsProcessed() bool {
 	return d.Status == "processed"

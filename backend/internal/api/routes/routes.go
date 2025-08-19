@@ -106,10 +106,10 @@ func setupCompanyCredentialRoutes(companies fiber.Router) {
 
 	// Implementar handlers de credenciais
 	credentialHandler := handlers.NewCredentialHandler()
-	credentials.Post("/", credentialHandler.CreateCredential)      // Criar credencial
-	credentials.Get("/", credentialHandler.GetCredentials)         // Listar credenciais
-	credentials.Patch("/:id", credentialHandler.UpdateCredential)  // Atualizar credencial
-	credentials.Delete("/:id", credentialHandler.DeleteCredential) // Deletar credencial
+	credentials.Post("/", credentialHandler.CreateCredential)                 // Criar credencial
+	credentials.Get("/", credentialHandler.GetCredentials)                    // Listar credenciais
+	credentials.Patch("/:credential_id", credentialHandler.UpdateCredential)  // Atualizar credencial
+	credentials.Delete("/:credential_id", credentialHandler.DeleteCredential) // Deletar credencial
 }
 
 // setupNFSeRoutes configura as rotas de NFSe

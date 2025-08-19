@@ -1,6 +1,7 @@
 package handlers
 
 import (
+	"regexp"
 	"strconv"
 
 	"github.com/gofiber/fiber/v2"
@@ -330,10 +331,26 @@ func (h *CompanyHandler) UpdateCompany(c *fiber.Ctx) error {
 		})
 	}
 
-	// Validar entrada
-	if err := validateStruct(req); err != nil {
+	// Validação customizada para email
+	if req.Email != nil && *req.Email != "" {
+		// Se email foi fornecido, validar se é válido
+		emailRegex := `^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$`
+		matched, _ := regexp.MatchString(emailRegex, *req.Email)
+		if !matched {
+			return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{
+				"error": "Por favor, informe um email válido ou deixe o campo vazio",
+			})
+		}
+	}
+
+	// Validar outros campos (pular validação de email pois já foi feita acima)
+	// Criar uma cópia temporária do struct sem o campo email para validação
+	tempReq := req
+	tempReq.Email = nil // Remove email da validação
+
+	if err := validateStruct(tempReq); err != nil {
 		return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{
-			"error":   "Validation failed",
+			"error":   "Por favor, verifique os dados informados. Alguns campos obrigatórios podem estar faltando ou inválidos",
 			"details": err,
 		})
 	}

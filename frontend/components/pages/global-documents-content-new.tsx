@@ -306,7 +306,7 @@ export function GlobalDocumentsContent() {
       {/* DataTable */}
       <DataTable
         columns={columns}
-        data={documents}
+        data={documents || []}
         searchKey="original_name"
         searchPlaceholder="Buscar por nome do arquivo..."
         onAdd={handleAdd}

@@ -195,21 +195,42 @@ func (s *NFSeScheduler) fetchCompanyDocuments(ctx context.Context, company *mode
 		"credential_type": credential.Type,
 	})
 
-	// Calculate date range based on config
+	// Calculate intelligent date range based on last sync
 	endDate := time.Now()
-	startDate := endDate.AddDate(0, 0, -s.config.NFSeScheduler.FetchDaysBack)
+	startDate := s.calculateOptimalStartDate(ctx, company.ID, endDate)
+
+	// Skip if no new data is expected
+	if startDate.After(endDate) {
+		logger.InfoWithFields("No new documents expected, skipping company", map[string]any{
+			"operation":  "fetch_company_documents",
+			"company_id": company.ID,
+			"reason":     "start_date_after_end_date",
+		})
+		return true
+	}
 
 	// Calculate actual days difference for verification
 	daysDiff := int(endDate.Sub(startDate).Hours() / 24)
 
-	logger.InfoWithFields("Fetching documents for date range", map[string]any{
+	logger.InfoWithFields("Fetching documents for optimized date range", map[string]any{
 		"operation":        "fetch_company_documents",
 		"company_id":       company.ID,
 		"start_date":       startDate.Format("2006-01-02"),
 		"end_date":         endDate.Format("2006-01-02"),
 		"config_days_back": s.config.NFSeScheduler.FetchDaysBack,
 		"calculated_days":  daysDiff,
+		"optimization":     "enabled",
 	})
+
+	// Check if we should skip this fetch based on recent activity
+	if s.shouldSkipFetch(ctx, company.ID, startDate, endDate) {
+		logger.InfoWithFields("Skipping fetch - no new documents expected", map[string]any{
+			"operation":  "fetch_company_documents",
+			"company_id": company.ID,
+			"reason":     "recent_sync_completed",
+		})
+		return true
+	}
 
 	totalDocuments := 0
 	// Try to fetch multiple pages
@@ -325,6 +346,126 @@ func (s *NFSeScheduler) FetchCompanyNow(ctx context.Context, companyID int64) er
 	// Fetch documents
 	s.fetchCompanyDocuments(ctx, company)
 	return nil
+}
+
+// calculateOptimalStartDate calculates the optimal start date for fetching based on existing data
+func (s *NFSeScheduler) calculateOptimalStartDate(ctx context.Context, companyID int64, endDate time.Time) time.Time {
+	// Default fallback: use config days back
+	defaultStartDate := endDate.AddDate(0, 0, -s.config.NFSeScheduler.FetchDaysBack)
+
+	// Find the most recent document for this company
+	var latestDoc models.Document
+	err := database.DB.NewSelect().
+		Model(&latestDoc).
+		Where("company_id = ? AND type = 'nfse'", companyID).
+		Order("issue_date DESC").
+		Limit(1).
+		Scan(ctx)
+
+	if err != nil {
+		// No documents found or error - use default range
+		logger.InfoWithFields("No existing documents found, using default date range", map[string]any{
+			"operation":  "calculate_optimal_start_date",
+			"company_id": companyID,
+			"start_date": defaultStartDate.Format("2006-01-02"),
+			"reason":     "no_existing_documents",
+		})
+		return defaultStartDate
+	}
+
+	// Calculate start date based on latest document
+	// Add a small buffer (1 day back) to ensure we don't miss any documents
+	optimizedStartDate := latestDoc.IssueDate.AddDate(0, 0, -1)
+
+	// Ensure we don't go too far back (respect the config limit)
+	if optimizedStartDate.Before(defaultStartDate) {
+		optimizedStartDate = defaultStartDate
+	}
+
+	// Ensure we don't start in the future
+	if optimizedStartDate.After(endDate) {
+		optimizedStartDate = endDate
+	}
+
+	logger.InfoWithFields("Calculated optimized start date", map[string]any{
+		"operation":         "calculate_optimal_start_date",
+		"company_id":        companyID,
+		"latest_doc_date":   latestDoc.IssueDate.Format("2006-01-02"),
+		"optimized_start":   optimizedStartDate.Format("2006-01-02"),
+		"default_start":     defaultStartDate.Format("2006-01-02"),
+		"days_saved":        int(optimizedStartDate.Sub(defaultStartDate).Hours() / 24),
+		"latest_doc_number": latestDoc.Number,
+	})
+
+	return optimizedStartDate
+}
+
+// shouldSkipFetch determines if we should skip the API fetch based on recent activity
+func (s *NFSeScheduler) shouldSkipFetch(ctx context.Context, companyID int64, startDate, endDate time.Time) bool {
+	// Don't skip if the date range is very small (less than 7 days)
+	daysDiff := int(endDate.Sub(startDate).Hours() / 24)
+	if daysDiff < 7 {
+		return false
+	}
+
+	// Check if we have recent documents that cover most of the requested period
+	// This helps avoid unnecessary API calls when we already have recent data
+	recentThreshold := endDate.AddDate(0, 0, -3) // Last 3 days
+
+	recentDocCount, err := database.DB.NewSelect().
+		Model((*models.Document)(nil)).
+		Where("company_id = ? AND type = 'nfse'", companyID).
+		Where("issue_date >= ? AND issue_date <= ?", recentThreshold, endDate).
+		Count(ctx)
+
+	if err != nil {
+		// If we can't check, don't skip
+		return false
+	}
+
+	// If we have recent documents and the range is large, we might skip
+	// This is a heuristic: if we have documents in the last 3 days and we're asking for a large range,
+	// it's likely we're up to date
+	if recentDocCount > 0 && daysDiff > 30 {
+		logger.InfoWithFields("Recent documents found, considering skip", map[string]any{
+			"operation":        "should_skip_fetch",
+			"company_id":       companyID,
+			"recent_doc_count": recentDocCount,
+			"days_diff":        daysDiff,
+			"recent_threshold": recentThreshold.Format("2006-01-02"),
+		})
+
+		// Additional check: see if we've fetched recently (within last hour)
+		lastFetchTime := s.getLastFetchTime(ctx, companyID)
+		if lastFetchTime != nil && time.Since(*lastFetchTime) < time.Hour {
+			logger.InfoWithFields("Recent fetch detected, skipping", map[string]any{
+				"operation":  "should_skip_fetch",
+				"company_id": companyID,
+				"last_fetch": lastFetchTime.Format("2006-01-02 15:04:05"),
+				"time_since": time.Since(*lastFetchTime).String(),
+			})
+			return true
+		}
+	}
+
+	return false
+}
+
+// getLastFetchTime gets the last time we successfully fetched documents for a company
+func (s *NFSeScheduler) getLastFetchTime(ctx context.Context, companyID int64) *time.Time {
+	var latestDoc models.Document
+	err := database.DB.NewSelect().
+		Model(&latestDoc).
+		Where("company_id = ? AND type = 'nfse'", companyID).
+		Order("created_at DESC").
+		Limit(1).
+		Scan(ctx)
+
+	if err != nil {
+		return nil
+	}
+
+	return &latestDoc.CreatedAt
 }
 
 // GetStatus returns the current status of the scheduler
